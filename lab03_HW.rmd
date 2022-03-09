@@ -1,0 +1,388 @@
+---
+title: "Lab03_Homework"
+author: "Ernest Subah"
+date: "3/6/2022"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Regression via OLS with one feature
+
+Let's quickly recreate the sample data set from practice lecture 7:
+
+```{r}
+set.seed(1984)
+n = 20
+x = runif(n, 0, 1)
+print("x")
+x
+beta_0 = 3
+beta_1 = -2
+```
+
+Compute h^* as `h_star_x`, then draw epsilon from an iid N(0, 0.33^2) distribution as `epsilon`, then compute the vector y.
+
+```{r}
+h_star_x = beta_0 +(beta_1*x)
+print("h_star")
+h_star_x
+epsilon = rnorm(20,mean = 0,sd = 0.33**2)
+print("errors")
+epsilon
+y = h_star_x + epsilon
+print("y")
+y
+```
+
+Graph the data by running the following chunk:
+
+```{r}
+pacman::p_load(ggplot2)
+simple_df = data.frame(x = x, y = y)
+head(simple_df)
+simple_viz_obj = ggplot(simple_df, aes(x, y)) + 
+  geom_point(size = 2)
+#simple_viz_obj
+true_hstar_line = geom_abline(intercept = beta_0, slope = beta_1, color = "green")
+simple_viz_obj + true_hstar_line
+```
+
+Does this make sense given the values of beta_0 and beta_1? It does make sense, especially for beta_0 = 3; the graph is not big enough to see where beta_1 extends; overall, visually, it seems about 'right'.
+
+
+Write a function `my_simple_ols` that takes in a vector `x` and vector `y` and returns a list that contains the `b_0` (intercept), `b_1` (slope), `yhat` (the predictions), `e` (the residuals), `SSE`, `SST`, `MSE`, `RMSE` and `Rsq` (for the R-squared metric). Internally, you can only use the functions `sum` and `length` and other basic arithmetic operations. You should throw errors if the inputs are non-numeric or not the same length. You should also name the class of the return value `my_simple_ols_obj` by using the `class` function as a setter. No need to create ROxygen documentation here.
+
+```{r}
+my_simple_ols = function(x, y){
+  ols_obj = list()
+  n<-length(x)
+  y_bar <- sum(y)/n
+  x_bar <- sum(x)/n
+  s_y <- sqrt(sum((y-y_bar)^2)/(n-1))
+  s_x <- sqrt(sum((x-x_bar)^2)/(n-1))
+  s_xy <- sum((x-x_bar)*(y-y_bar))/(n-1)
+  r <- s_xy/(s_x*s_y)
+  b_1 = (r*sqrt(s_y))/sqrt(s_x)
+  b_0 <- y_bar -b_1 * x_bar
+  y_hat <- b_0 +(b_1*x)
+  e= y-y_hat
+  SSE = sum(e^2)
+  SST = sum((y-y_bar)^2)
+  MSE = SSE/(n-2)
+  RMSE = sqrt(MSE)
+  Rsq = 1- SSE/SST
+  
+  ols_obj$b_0 <- b_0
+  ols_obj$b_1 <- b_1
+  ols_obj$y_hat <- y_hat
+  ols_obj$e <- e
+  ols_obj$SSE <- SSE
+  ols_obj$SST <- SST
+  ols_obj$MSE <- MSE
+  ols_obj$RMSE <- RMSE
+  ols_obj$Rsq <- Rsq
+  
+  class(ols_obj) = "my_simple_ols_obj"
+  ols_obj
+
+}
+my_simple_ols(x,y) #this should generate b_0 c;pse tp 3 and b_1 close to -2
+```
+
+Verify your computations are correct for the vectors `x` and `y` from the first chunk using the `lm` function in R:
+
+```{r}
+lm_mod = lm(y ~ x, simple_df)
+my_simple_ols_mod = my_simple_ols
+lm_mod
+class(lm_mod)
+print("intercept")
+as.numeric(coef(lm_mod)[1])
+#my_simple_ols_mod$b_0
+print("slope")
+as.numeric(coef(lm_mod)[2])
+#my_simple_ols_mod$b_1
+#my_simple_ols_mod = lm(lm_mod)
+#typeof(my_simple_ols_mod)
+#my_simple_ols_mod
+#class(my_simple_ols_mod)
+#b = coef(my_simple_ols_mod)
+#b
+#names(b)
+#class(b)
+#names(summary(my_simple_ols_mod))
+#summary(my_simple_ols_mod$r.squared) #r_squared
+#summary(my_simple_ols_mod)$sigma #the RMSE
+#run the tests to ensure the function is up to spec
+pacman::p_load(testthat)
+expect_equal(my_simple_ols_mod$b_0, as.numeric(coef(lm_mod)[1]), tol = 1e-4)
+expect_equal(my_simple_ols_mod$b_1, as.numeric(coef(lm_mod)[2]), tol = 1e-4)
+expect_equal(my_simple_ols_mod$RMSE, summary(lm_mod)$sigma, tol = 1e-4)
+expect_equal(my_simple_ols_mod$Rsq, summary(lm_mod)$r.squared, tol = 1e-4)
+```
+
+Verify that the average of the residuals is 0 using the `expect_equal`. Hint: use the syntax above.
+
+```{r}
+expect_equal(sum(my_simple_ols_mod$e)/length(my_simple_ols_mod$e),sum(lm_mod$residuals),tol=1e-4)
+```
+
+Create the $X$ matrix for this data example. Make sure it has the correct dimension.
+
+```{r}
+as.matrix(cbind(1,x))
+```
+
+Use the `model.matrix` function to compute the matrix `X` and verify it is the same as your manual construction.
+
+```{r}
+modMat = model.matrix(~x)
+x
+```
+
+Create a prediction method `g` that takes in a vector `x_star` and `my_simple_ols_obj`, an object of type `my_simple_ols_obj` and predicts y values for each entry in `x_star`. 
+
+```{r}
+g = function(my_simple_ols_obj, x_star){
+  my_simple_ols_obj$b_0 + (my_simple_ols_obj$b_1)*x_star
+}
+g(my_simple_ols_mod,c(1:20))
+```
+
+Use this function to verify that when predicting for the average x, you get the average y.
+
+```{r}
+expect_equal(g(my_simple_ols_obj, mean(x)), mean(y))
+```
+
+
+In class we spoke about error due to ignorance, misspecification error and estimation error. Show that as n grows, estimation error shrinks. Let us define an error metric that is the difference between b_0 and b_1 and beta_0 and beta_1. How about ||b - beta||^2 where the quantities are now the vectors of size two. Show as n increases, this shrinks. 
+
+```{r}
+beta_0 = 3
+beta_1 = -2
+ns = 10^(1:7)
+#beta = c(beta_0, beta_1)
+
+errors_in_beta= array(NA, length(ns))
+for (i in 1 : length(ns)) {
+  n = ns[i]
+  x = runif(n)
+  h_star_x = beta_0 + beta_1 * x 
+  epsilon = rnorm(n, mean = 0, sd = 0.33)
+  y = h_star_x + epsilon
+  mod = my_simple_ols(x,y)
+  
+  errors_in_beta[i]= (mod$b_0-beta_0)^2+(mod$b_1-beta_1)^2
+}
+rbind(ns,errors_in_beta)
+```
+
+
+We are now going to repeat one of the first linear model building exercises in history --- that of Sir Francis Galton in 1886. First load up package `HistData`.
+
+```{r}
+pacman::p_load(HistData)
+```
+
+In it, there is a dataset called `Galton`. Load it up.
+
+```{r}
+data(Galton)
+```
+
+You now should have a data frame in your workspace called `Galton`. Summarize this data frame and write a few sentences about what you see. Make sure you report n, p and a bit about what the columns represent and how the data was measured. See the help file `?Galton`.
+p is 1 and n is 928 the number of observations  
+
+```{r}
+pacman::p_load(skimr)
+skim(Galton)
+```
+
+TO-DO
+
+Find the average height (include both parents and children in this computation).
+
+```{r}
+y =c(Galton$parent,Galton$child)
+y_bar= sum(y)/(2*nrow(Galton))
+y_bar
+```
+
+If you were predicting child height from parent and you were using the null model, what would the RMSE be of this model be?
+
+```{r}
+SSE_0 = sum((y-y_bar)^2)
+RMSE_0 = sqrt(SSE_0/(2*nrow(Galton)-2))
+RMSE_0
+```
+
+Note that in Math 241 you learned that the sample average is an estimate of the "mean", the population expected value of height. We will call the average the "mean" going forward since it is probably correct to the nearest tenth of an inch with this amount of data.
+
+Run a linear model attempting to explain the childrens' height using the parents' height. Use `lm` and use the R formula notation. Compute and report b_0, b_1, RMSE and R^2. 
+
+```{r}
+print("Regression using lm")
+lm_model = lm(child ~ parent, Galton)
+lm_model
+summary(lm_model)
+print("Regression using the R formula")
+my_simple_ols(Galton$parent,Galton$child)
+
+```
+
+Interpret all four quantities: b_0, b_1, RMSE and R^2. Use the correct units of these metrics in your answer.
+The intercept has no significance in our interpretation because a parent (x coefficient) must exist for there to be a value; this infers that even with no parents, the kid will still have a child, which is counter intuitive to reality;  b_1: according to our formula, 
+
+TO-DO
+
+How good is this model? How well does it predict? Discuss. The model is not great if judging from the r_squared and the RMSE; using both the OLS function we created an the 'lm' function in R, both models calculated r_squared as approximately 0.21 which shows that only 21% of the variability in the children height can be explained by the average height of the parents; additionally, both models calculated an RMSE of approximately 2.24/2.25 
+
+TO-DO
+
+It is reasonable to assume that parents and their children have the same height? Explain why this is reasonable using basic biology and common sense. 
+This could be reasonable because offsprings inherit genetic traits and attributes from their parents, hence some may use this as an assumption; this is not right from a modeling perspective where we use multiple variable to make a prediction
+
+TO-DO
+
+If they were to have the same height and any differences were just random noise with expectation 0, what would the values of beta_0 and beta_1 be? beta_0 ~ 0 (dropped) and beta_1 ~ 1 with r_squared ~ 1
+
+TO-DO
+
+Let's plot (a) the data in D as black dots, (b) your least squares line defined by b_0 and b_1 in blue, (c) the theoretical line beta_0 and beta_1 if the parent-child height equality held in red and (d) the mean height in green.
+
+```{r}
+names(summary(lm_model))
+```
+
+
+
+```{r}
+pacman::p_load(ggplot2)
+ggplot(Galton, aes(x = parent, y = child)) + 
+  geom_point() + 
+  geom_jitter() +
+  geom_abline(intercept = lm_model$b_0, slope = lm_model$b_1, color = "blue", size = 1) +
+  geom_abline(intercept = 0, slope = 1, color = "red", size = 1) +
+  geom_abline(intercept = y_bar, slope = 0, color = "darkgreen", size = 1) +
+  xlim(63.5, 72.5) + 
+  ylim(63.5, 72.5) +
+  coord_equal(ratio = 1)
+```
+
+Fill in the following sentence: 
+
+TO-DO: Children of short parents became taller on average and children of tall parents became shorter on average.
+
+Why did Galton call it "Regression towards mediocrity in hereditary stature" which was later shortened to "regression to the mean"? This implies regression to the mean; with this being a continuous y variable and considering the our null model is y_hat, this is mediocre hence we can describe this as "regression to the <mean, or average, or y_hat or mediocre>" 
+
+TO-DO
+
+Why should this effect be real? This is real and consistent with mean reversion in statistics; all data or realities converge to their historical mean over time; this can also be called mean convergence
+
+TO-DO
+
+You now have unlocked the mystery. Why is it that when modeling with y continuous, everyone calls it "regression"? Write a better, more descriptive and appropriate name for building predictive models with y continuous.
+The goal of regression analysis is to minimize the error term(s), therefore a better description would be "Ordinary Least Squares" or "Errors Minimization Function for Linear Models"
+
+TO-DO
+
+You can now clear the workspace.
+
+```{r}
+rm(list = ls())
+```
+
+Create a dataset D which we call `Xy` such that the linear model has R^2 about 50\% and RMSE approximately 1.
+
+```{r}
+x = #TO-DO
+y = #TO-DO
+Xy = data.frame(x = x, y = y)
+```
+
+Create a dataset D which we call `Xy` such that the linear model has R^2 about 0\% but x, y are clearly associated.
+
+```{r}
+x = (-100:100)
+y = x^2
+Xy = data.frame(x = x, y = y)
+my_simple_ols(x,y)
+```
+
+Extra credit but required for 650 students: create a dataset D and a model that can give you R^2 arbitrarily close to 1 i.e. approximately 1 - epsilon but RMSE arbitrarily high i.e. approximately M.
+
+```{r}
+epsilon = 0.01
+M = 1000
+#TO-DO
+```
+
+
+Write a function `my_ols` that takes in `X`, a matrix with with p columns representing the feature measurements for each of the n units, a vector of n responses `y` and returns a list that contains the `b`, the p+1-sized column vector of OLS coefficients, `yhat` (the vector of n predictions), `e` (the vector of n residuals), `df` for degrees of freedom of the model, `SSE`, `SST`, `MSE`, `RMSE` and `Rsq` (for the R-squared metric). Internally, you cannot use `lm` or any other package; it must be done manually. You should throw errors if the inputs are non-numeric or not the same length. Or if `X` is not otherwise suitable. You should also name the class of the return value `my_ols` by using the `class` function as a setter. No need to create ROxygen documentation here.
+
+
+```{r}
+my_ols = function(X, y){
+  n = nrow(X)
+  p = ncol(X)
+  X = cbind(1,X)
+  Xt = t(X)
+  XtX = Xt%*%X
+  Xt/Xinv = solve(XtX)
+  b = XtXinv%*%Xt%*%y
+  y_hat = X%*%b
+  e = y-y_hat
+  df = p+1
+  SSE = sum(e^2)
+  SST = var(y)*(n-1)
+  MSE =SSE/(n-df) # (n-p+1)
+  RMSE = (sqrt(MSE))
+  Rsq = 1-SSE/SST # R square
+  ols = list()
+  ols$b =b
+  ols$y_hat = y_hat
+  ols$e = e
+  ols$df = df
+  ols$SSE = SSE
+  ols$SST = SST
+  ols$MSE = MSE
+  ols$Rsq= Rsq
+  
+  ols
+
+}
+```
+
+Verify that the OLS coefficients for the `Type` of cars in the cars dataset gives you the same results as we did in class (i.e. the ybar's within group). 
+
+```{r}
+X= model.matrix(~Type,MASS::Cars93)[,-1]
+y = MASS::Cars93$Price
+my_ols(X,y)
+```
+
+
+Create a prediction method `g` that takes in a vector `x_star` and the dataset D i.e. `X` and `y` and returns the OLS predictions. Let `X` be a matrix with with p columns representing the feature measurements for each of the n units
+
+```{r}
+g = function(x_star, X, y){
+  X = cbind(1,X)
+  Xt = t(X)
+  XtX = Xt%*%X
+  Xt/Xinv = solve(XtX)
+  b = XtXinv%*%Xt%*%y
+  cat(length(b))
+  cat(x_star)
+  
+  x_star%*%b
+  
+}
+g(X[7,],X,y)
+```
+
+
+
